@@ -19,6 +19,16 @@ The extension does not require the project backend for normal use. Users configu
 
 6. Click the extension icon to open the side panel.
 
+## Local Debug Launcher
+
+Run this script to start a dedicated debug browser and open the extension UI:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-chrome-dev.ps1
+```
+
+The launcher prefers Chrome for Testing because newer branded Chrome builds may ignore the `--load-extension` command-line flag. If Chrome for Testing is not installed, the script falls back to regular Chrome and opens `chrome://extensions` for manual loading.
+
 ## Data and Key Handling
 
 - API Key is stored in `chrome.storage.local`.
