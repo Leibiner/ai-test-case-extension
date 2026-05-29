@@ -3,21 +3,21 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI Test Case Designer</title>
+    <title>AI 测试用例设计助手</title>
     <link rel="stylesheet" href="sidepanel.css?v=0.3.1">
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div class="title-group">
-          <div class="app-name">AI Test Case Designer</div>
-          <div class="app-subtitle">Test Case Chat</div>
+          <div class="app-name">AI 测试用例设计助手</div>
+          <div class="app-subtitle">需求转测试用例</div>
         </div>
         <div class="topbar-actions">
-          <span class="status" id="statusText">Not configured</span>
-          <button class="ghost" id="settingsBtn" type="button">Settings</button>
-          <button class="ghost" id="historyBtn" type="button">History</button>
-          <button class="ghost" id="clearBtn" type="button">New</button>
+          <span class="status" id="statusText">未配置</span>
+          <button class="ghost" id="settingsBtn" type="button">设置</button>
+          <button class="ghost" id="historyBtn" type="button">历史</button>
+          <button class="ghost" id="clearBtn" type="button">新会话</button>
         </div>
       </header>
 
@@ -25,15 +25,16 @@
 
       <footer class="composer-wrap">
         <div class="composer">
-          <textarea id="chatInput" rows="3" placeholder="Describe the requirement. Example: Design login test cases for phone + password login, lock after 5 failed attempts."></textarea>
+          <textarea id="chatInput" rows="3" placeholder="请输入需求文案。例如：手机号+密码登录，连续输错 5 次后锁定账号，请设计测试用例。"></textarea>
           <div class="composer-bar">
-            <span class="hint">Enter to send, Shift+Enter for newline</span>
-            <button class="send-button" id="sendBtn" type="button">Send</button>
+            <span class="hint">Enter 发送，Shift+Enter 换行</span>
+            <button class="send-button" id="sendBtn" type="button">发送</button>
           </div>
         </div>
       </footer>
     </main>
 
-    <script src="sidepanel.js?v=0.3.1"></script>
+    <script src="prompts.js?v=0.3.2"></script>
+    <script src="sidepanel.js?v=0.3.2"></script>
   </body>
 </html>

@@ -1,68 +1,68 @@
-# AI Test Case Designer Chrome Extension
+# AI 测试用例设计助手 Chrome 插件
 
-This is a local-first Chrome extension MVP.
+这是一个本地优先的 Chrome 插件 MVP。
 
-The extension does not require the project backend for normal use. Users configure their own OpenAI-compatible API key in the extension options page, and the extension calls that model service directly from the browser.
+插件正常使用不依赖项目后端。用户在插件设置页配置自己的 OpenAI 兼容 API Key，插件直接从浏览器调用用户配置的模型服务。
 
-## Load in Chrome
+## 在 Chrome 中加载
 
-1. Open `chrome://extensions`.
-2. Enable `Developer mode`.
-3. Click `Load unpacked`.
-4. Select this extension folder.
-
-5. Open extension options and configure:
+1. 打开 `chrome://extensions`。
+2. 开启「开发者模式」。
+3. 点击「加载已解压的扩展程序」。
+4. 选择当前插件目录。
+5. 打开插件设置页，配置：
 
    - API Key
-   - Base URL
-   - Model
+   - 接口地址 Base URL
+   - 模型名称
 
-6. Click the extension icon to open the side panel.
+6. 点击插件图标打开侧边栏。
 
-## Local Debug Launcher
+## 本地调试启动
 
-Run this script to start a dedicated debug browser and open the extension UI:
+运行以下脚本，可以启动独立调试浏览器并直接打开插件页面：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-chrome-dev.ps1
 ```
 
-The launcher prefers Chrome for Testing because newer branded Chrome builds may ignore the `--load-extension` command-line flag. If Chrome for Testing is not installed, the script falls back to regular Chrome and opens `chrome://extensions` for manual loading.
+启动脚本会优先使用 Chrome for Testing，因为新版普通 Chrome 可能会忽略 `--load-extension` 命令行参数。如果没有安装 Chrome for Testing，脚本会回退到普通 Chrome，并打开 `chrome://extensions` 供手动加载。
 
-## Data and Key Handling
+## 数据与 Key 处理
 
-- API Key is stored in `chrome.storage.local`.
-- Chat history and generated cases are stored in `chrome.storage.local`.
-- The extension sends requirement text only to the model endpoint configured by the user.
-- No user data is sent to the plugin author.
+- API Key 保存在 `chrome.storage.local`。
+- 聊天历史和生成的测试用例保存在 `chrome.storage.local`。
+- 插件只会把需求文案发送到用户自己配置的模型接口。
+- 插件作者不会接收用户数据。
 
-## Current MVP Flow
+## 当前 MVP 流程
 
 ```text
-User types requirement
-  -> Side panel reads local model settings
-  -> Side panel calls user's OpenAI-compatible /chat/completions endpoint
-  -> Model returns assistant message and optional test cases
-  -> Side panel renders the chat reply and test case table
-  -> User exports CSV / JSON / Markdown
+用户输入需求文案
+  -> 侧边栏读取本地模型设置
+  -> 侧边栏调用用户配置的 /chat/completions 接口
+  -> 模型返回回复和可选测试用例
+  -> 侧边栏渲染聊天回复和测试用例表格
+  -> 用户导出 CSV / JSON / Markdown
 ```
 
-## Current Capabilities
+## 当前能力
 
-- Codex-like chat side panel.
-- User-owned API Key and model settings.
-- Multi-turn message history in the current session.
-- AI-style clarification when the requirement is too vague.
-- Structured test case table when enough information is available.
-- Export CSV, JSON, Markdown.
-- Save recent generated sessions in extension local storage.
+- 类 Codex 的聊天侧边栏。
+- 用户自有 API Key 和模型设置。
+- 当前会话内多轮上下文。
+- 需求不清晰时先追问。
+- 信息足够时生成结构化测试用例。
+- 系统提示词独立维护在 `prompts.js`。
+- 支持导出 CSV、JSON、Markdown。
+- 最近生成会话保存在插件本地存储。
 
-## Intentionally Not Included
+## 当前暂不包含
 
-- Backend service dependency.
-- Reading current page DOM.
-- Jira / ZenTao integration.
-- File upload parsing inside the extension.
-- Knowledge base / RAG.
-- Screenshot OCR.
-- Platform write-back.
+- 后端服务依赖。
+- 读取当前页面 DOM。
+- Jira / 禅道集成。
+- 插件内文件上传解析。
+- 知识库 / RAG。
+- 截图 OCR。
+- 平台回写。

@@ -77,11 +77,11 @@ function addPlainMessage(role, text) {
 async function loadSettings() {
   state.settings = { ...defaults, ...(await getStored(SETTINGS_KEY, defaults)) };
   if (state.settings.apiKey) {
-    setStatus("Configured", "llm");
-    addPlainMessage("ai", `Loaded local model settings: ${state.settings.model}`);
+    setStatus("已配置", "llm");
+    addPlainMessage("ai", `已加载本地模型配置：${state.settings.model}`);
   } else {
-    setStatus("Not configured");
-    addMessage("ai", `<p>Please configure your API key first. The key is stored only in your browser local storage.</p><div class="message-tools"><button class="message-action" data-action="open-options" type="button">Open settings</button></div>`);
+    setStatus("未配置");
+    addMessage("ai", `<p>请先配置 API Key。Key 只会保存在你的浏览器本地。</p><div class="message-tools"><button class="message-action" data-action="open-options" type="button">打开设置</button></div>`);
   }
 }
 
@@ -98,7 +98,7 @@ async function sendChat() {
 
   const content = els.chatInput.value.trim();
   if (!content) {
-    setStatus("Input required");
+    setStatus("请输入需求");
     return;
   }
 
@@ -107,8 +107,8 @@ async function sendChat() {
 
   state.settings = { ...defaults, ...(await getStored(SETTINGS_KEY, defaults)) };
   if (!state.settings.apiKey) {
-    addMessage("ai", `<p>No API key is configured. Open settings and enter your model service details.</p><div class="message-tools"><button class="message-action" data-action="open-options" type="button">Open settings</button></div>`);
-    setStatus("Not configured");
+    addMessage("ai", `<p>还没有配置 API Key。请打开设置，填写你的模型服务信息。</p><div class="message-tools"><button class="message-action" data-action="open-options" type="button">打开设置</button></div>`);
+    setStatus("未配置");
     setLoading(false);
     state.isSending = false;
     return;
@@ -117,32 +117,32 @@ async function sendChat() {
   els.chatInput.value = "";
   state.messages.push({ role: "user", content });
   addPlainMessage("user", content);
-  const loadingNode = addMessage("ai", "<p>Thinking...</p>", "pending");
+  const loadingNode = addMessage("ai", "<p>正在分析需求...</p>", "pending");
 
   try {
     const result = await callModel(state.settings, state.messages);
     loadingNode.remove();
 
-    const assistantText = result.message || "Done.";
+    const assistantText = result.message || "已完成。";
     state.messages.push({ role: "assistant", content: assistantText });
 
     if (Array.isArray(result.cases) && result.cases.length) {
       state.cases = normalizeCases(result.cases);
       addMessage("ai", `
         <p>${escapeHtml(assistantText)}</p>
-        <p class="mode-note">Source: local user-configured model ${escapeHtml(state.settings.model)}</p>
+        <p class="mode-note">来源：你本地配置的模型 ${escapeHtml(state.settings.model)}</p>
         ${renderCaseTable(state.cases)}
         ${renderExportActions()}
       `);
       await saveHistory();
     } else {
-      addMessage("ai", `<p>${escapeHtml(assistantText)}</p><p class="mode-note">Source: local user-configured model ${escapeHtml(state.settings.model)}</p>`);
+      addMessage("ai", `<p>${escapeHtml(assistantText)}</p><p class="mode-note">来源：你本地配置的模型 ${escapeHtml(state.settings.model)}</p>`);
     }
-    setStatus("Replied", "llm");
+    setStatus("已回复", "llm");
   } catch (error) {
     loadingNode.remove();
-    addMessage("ai", `<p>Request failed: ${escapeHtml(error.message)}</p><p>Check API key, Base URL, model name, and extension host permissions.</p>`);
-    setStatus("Failed");
+    addMessage("ai", `<p>请求失败：${escapeHtml(error.message)}</p><p>请检查 API Key、接口地址 Base URL、模型名称，以及插件访问权限。</p>`);
+    setStatus("请求失败");
   } finally {
     setLoading(false);
     state.isSending = false;
@@ -179,20 +179,7 @@ async function callModel(settings, messages) {
 }
 
 function buildSystemPrompt() {
-  return [
-    "You are a senior QA test design assistant.",
-    "Help the user turn requirement text into executable test cases through a Codex-like chat.",
-    "Reply in Chinese unless the user explicitly asks for another language.",
-    "If the requirement is unclear, ask the 2-4 most important clarification questions and return an empty cases array.",
-    "If the requirement is clear enough, generate structured test cases.",
-    "Cover main flow, input validation, exception flow, boundary values, state changes, permissions/security, data consistency, and API errors where applicable.",
-    "Use black-box test design techniques: equivalence partitioning, boundary value analysis, decision tables, state transition testing, scenario testing, and error guessing.",
-    "Every case must be executable. Steps and expected results must be specific. Avoid vague text such as 'verify it works'.",
-    "Do not create duplicate cases just to increase count.",
-    "Priority rule: P0 for critical flows, money, login, permissions, and data corruption risk; P1 for important exceptions and boundaries; P2 for lower-risk compatibility or copy details.",
-    "Return JSON only. Do not return Markdown or code fences.",
-    "Shape: {\"message\":\"Chinese reply for the user\",\"cases\":[{\"id\":\"TC-001\",\"title\":\"...\",\"priority\":\"P0/P1/P2\",\"type\":\"normal/input validation/exception/boundary/state/security/API/compatibility\",\"precondition\":\"...\",\"steps\":\"...\",\"expected\":\"...\"}]}"
-  ].join("\n");
+  return globalThis.TEST_CASE_SYSTEM_PROMPT || "";
 }
 
 function buildResponseFormat(strictSchema) {
@@ -236,7 +223,7 @@ function parseModelJson(text) {
     return JSON.parse(text);
   } catch {
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("The model did not return valid JSON.");
+    if (!match) throw new Error("模型没有返回有效 JSON。");
     return JSON.parse(match[0]);
   }
 }
@@ -250,9 +237,9 @@ function setLoading(isLoading) {
 function normalizeCases(cases) {
   return cases.map((item, index) => ({
     id: item.id || `TC-${String(index + 1).padStart(3, "0")}`,
-    title: item.title || "Untitled test case",
+    title: item.title || "未命名测试用例",
     priority: item.priority || "P1",
-    type: item.type || "functional",
+    type: item.type || "功能测试",
     precondition: item.precondition || "",
     steps: Array.isArray(item.steps) ? item.steps.join("; ") : (item.steps || ""),
     expected: item.expected || ""
@@ -276,13 +263,13 @@ function renderCaseTable(cases) {
       <table>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Title</th>
-            <th>Priority</th>
-            <th>Type</th>
-            <th>Precondition</th>
-            <th>Steps</th>
-            <th>Expected</th>
+            <th>编号</th>
+            <th>标题</th>
+            <th>优先级</th>
+            <th>类型</th>
+            <th>前置条件</th>
+            <th>测试步骤</th>
+            <th>预期结果</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -302,7 +289,7 @@ function renderExportActions() {
 }
 
 function exportCsv() {
-  const header = ["ID", "Title", "Priority", "Type", "Precondition", "Steps", "Expected"];
+  const header = ["编号", "标题", "优先级", "类型", "前置条件", "测试步骤", "预期结果"];
   const rows = state.cases.map((item) => [item.id, item.title, item.priority, item.type, item.precondition, item.steps, item.expected]);
   downloadFile("test-cases.csv", [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n"), "text/csv;charset=utf-8");
 }
@@ -313,9 +300,9 @@ function exportJson() {
 
 function exportMarkdown() {
   const lines = [
-    "# Test Cases",
+    "# 测试用例",
     "",
-    "| ID | Title | Priority | Type | Precondition | Steps | Expected |",
+    "| 编号 | 标题 | 优先级 | 类型 | 前置条件 | 测试步骤 | 预期结果 |",
     "| --- | --- | --- | --- | --- | --- | --- |"
   ];
   state.cases.forEach((item) => {
@@ -353,20 +340,20 @@ async function showHistory() {
 
 function renderHistory(history) {
   if (!history.length) {
-    addPlainMessage("ai", "No history yet. A generated test case session will be saved automatically.");
+    addPlainMessage("ai", "暂无历史记录。生成测试用例后，会自动保存最近会话。");
     return;
   }
   const cards = history.slice(0, 5).map((item, index) => {
-    const firstUser = item.messages.find((message) => message.role === "user")?.content || "Untitled session";
+    const firstUser = item.messages.find((message) => message.role === "user")?.content || "未命名会话";
     return `
       <div class="case-card">
         <strong>${escapeHtml(firstUser.slice(0, 80))}</strong>
-        <p>${new Date(item.createdAt).toLocaleString()}, ${item.cases.length} cases</p>
-        <button data-action="reuse-history" data-index="${index}" type="button">Open</button>
+        <p>${new Date(item.createdAt).toLocaleString()}，${item.cases.length} 条用例</p>
+        <button data-action="reuse-history" data-index="${index}" type="button">打开</button>
       </div>
     `;
   }).join("");
-  addMessage("ai", `<p>Recent sessions:</p><div class="case-list">${cards}</div>`);
+  addMessage("ai", `<p>最近会话：</p><div class="case-list">${cards}</div>`);
 }
 
 async function reuseHistory(index) {
@@ -378,9 +365,9 @@ async function reuseHistory(index) {
   els.messages.innerHTML = "";
   state.messages.forEach((message) => addPlainMessage(message.role === "assistant" ? "ai" : "user", message.content));
   if (state.cases.length) {
-    addMessage("ai", `<p>Recent generated cases for this session.</p>${renderCaseTable(state.cases)}${renderExportActions()}`);
+    addMessage("ai", `<p>该会话最近生成的测试用例：</p>${renderCaseTable(state.cases)}${renderExportActions()}`);
   }
-  setStatus("History opened", state.settings.apiKey ? "llm" : "");
+  setStatus("已打开历史", state.settings.apiKey ? "llm" : "");
 }
 
 function startNewSession() {
@@ -389,8 +376,8 @@ function startNewSession() {
   state.cases = [];
   els.messages.innerHTML = "";
   els.chatInput.value = "";
-  setStatus(state.settings.apiKey ? "Configured" : "Not configured", state.settings.apiKey ? "llm" : "");
-  addPlainMessage("ai", "Send me a requirement. I will ask clarifying questions when needed, then generate structured test cases.");
+  setStatus(state.settings.apiKey ? "已配置" : "未配置", state.settings.apiKey ? "llm" : "");
+  addPlainMessage("ai", "请发送需求文案。我会在信息不足时先追问，信息足够时生成结构化测试用例。");
 }
 
 function csvCell(value) {

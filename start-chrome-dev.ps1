@@ -71,12 +71,12 @@ if ($extensionId) {
   $sidePanelUrl = "chrome-extension://$extensionId/sidepanel.html"
   $encodedSidePanelUrl = [System.Uri]::EscapeDataString($sidePanelUrl)
   Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$debugPort/json/new?$encodedSidePanelUrl" | Out-Null
-  Write-Host "Chrome started with AI Test Case Designer:"
+  Write-Host "已启动 AI 测试用例设计助手："
   Write-Host $sidePanelUrl
 } else {
   $extensionsUrl = [System.Uri]::EscapeDataString("chrome://extensions/")
   Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$debugPort/json/new?$extensionsUrl" | Out-Null
-  Write-Host "Chrome started, but the extension id was not detected automatically."
-  Write-Host "Open chrome://extensions and click Load unpacked, then select:"
+  Write-Host "Chrome 已启动，但未自动识别插件 ID。"
+  Write-Host "请打开 chrome://extensions，点击「加载已解压的扩展程序」，然后选择："
   Write-Host $extensionPath
 }

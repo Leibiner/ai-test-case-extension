@@ -81,7 +81,7 @@ async function testConnection() {
     setStatus("请先填写 API Key");
     return;
   }
-  setStatus("正在测试...");
+  setStatus("正在测试连接...");
   try {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
       method: "POST",
@@ -91,7 +91,7 @@ async function testConnection() {
       },
       body: JSON.stringify({
         model: settings.model,
-        messages: [{ role: "user", content: "Reply with OK." }],
+        messages: [{ role: "user", content: "请只回复 OK。" }],
         max_tokens: 16
       })
     });
