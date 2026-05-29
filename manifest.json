@@ -1,12 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "AI 测试用例设计助手",
-  "description": "使用你自己的 AI Key，在本地浏览器中通过对话生成可执行测试用例。",
-  "version": "0.3.2",
+  "name": "AI \u6d4b\u8bd5\u7528\u4f8b\u8bbe\u8ba1\u52a9\u624b",
+  "description": "\u4f7f\u7528\u4f60\u81ea\u5df1\u7684 AI Key\uff0c\u5728\u672c\u5730\u6d4f\u89c8\u5668\u4e2d\u901a\u8fc7\u5bf9\u8bdd\u751f\u6210\u53ef\u6267\u884c\u6d4b\u8bd5\u7528\u4f8b\u3002",
+  "version": "0.3.3",
   "permissions": ["sidePanel", "storage"],
   "host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "AI 测试用例设计助手"
+    "default_title": "AI \u6d4b\u8bd5\u7528\u4f8b\u8bbe\u8ba1\u52a9\u624b",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
