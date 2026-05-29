@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "AI Test Case Designer",
+  "description": "Chat with your own AI key to generate executable test cases locally in Chrome.",
+  "version": "0.3.1",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "action": {
+    "default_title": "AI Test Case Designer"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}
