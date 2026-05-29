@@ -13,7 +13,8 @@ const state = {
   sessionId: crypto.randomUUID(),
   messages: [],
   cases: [],
-  settings: { ...defaults }
+  settings: { ...defaults },
+  isSending: false
 };
 
 const els = {
@@ -93,23 +94,29 @@ async function openOptions() {
 }
 
 async function sendChat() {
+  if (state.isSending) return;
+
   const content = els.chatInput.value.trim();
   if (!content) {
     setStatus("Input required");
     return;
   }
 
+  state.isSending = true;
+  setLoading(true);
+
   state.settings = { ...defaults, ...(await getStored(SETTINGS_KEY, defaults)) };
   if (!state.settings.apiKey) {
     addMessage("ai", `<p>No API key is configured. Open settings and enter your model service details.</p><div class="message-tools"><button class="message-action" data-action="open-options" type="button">Open settings</button></div>`);
     setStatus("Not configured");
+    setLoading(false);
+    state.isSending = false;
     return;
   }
 
   els.chatInput.value = "";
   state.messages.push({ role: "user", content });
   addPlainMessage("user", content);
-  setLoading(true);
   const loadingNode = addMessage("ai", "<p>Thinking...</p>", "pending");
 
   try {
@@ -138,6 +145,7 @@ async function sendChat() {
     setStatus("Failed");
   } finally {
     setLoading(false);
+    state.isSending = false;
   }
 }
 
@@ -416,10 +424,6 @@ els.settingsBtn.addEventListener("click", openOptions);
 els.historyBtn.addEventListener("click", showHistory);
 els.clearBtn.addEventListener("click", startNewSession);
 els.chatInput.addEventListener("keydown", handleChatInputKeydown, true);
-document.addEventListener("keydown", (event) => {
-  if (event.target !== els.chatInput) return;
-  handleChatInputKeydown(event);
-}, true);
 
 els.messages.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
