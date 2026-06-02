@@ -4,26 +4,84 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI 测试用例设计助手</title>
-    <link rel="stylesheet" href="sidepanel.css?v=0.3.1">
+    <link rel="stylesheet" href="sidepanel.css?v=0.5.1">
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div class="title-group">
           <div class="app-name">AI 测试用例设计助手</div>
-          <div class="app-subtitle">需求转测试用例</div>
         </div>
         <div class="topbar-actions">
-          <span class="status" id="statusText">未配置</span>
-          <button class="ghost" id="settingsBtn" type="button">设置</button>
-          <button class="ghost" id="historyBtn" type="button">历史</button>
-          <button class="ghost" id="clearBtn" type="button">新会话</button>
+          <span class="status" id="statusText">模型未配置</span>
+          <button class="menu-button" id="menuBtn" type="button" aria-label="打开项目菜单" aria-expanded="false">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div class="action-menu" id="actionMenu" hidden>
+            <button id="settingsBtn" type="button">项目设置</button>
+            <button id="historyBtn" type="button">历史记录</button>
+            <button id="clearBtn" type="button">新建会话</button>
+          </div>
         </div>
       </header>
 
+      <section class="settings-panel" id="settingsPanel" hidden>
+        <div class="settings-head">
+          <div>
+            <div class="settings-title">模型设置</div>
+            <div class="settings-subtitle">配置会保存在浏览器本地</div>
+          </div>
+          <button class="ghost" id="closeSettingsBtn" type="button">关闭</button>
+        </div>
+
+        <label class="settings-field">
+          <span>API Key</span>
+          <div class="key-field">
+            <input id="settingsApiKey" type="password" placeholder="sk-...">
+            <button id="toggleKeyBtn" type="button">显示</button>
+          </div>
+        </label>
+
+        <label class="settings-field">
+          <span>接口地址 Base URL</span>
+          <input id="settingsBaseUrl" placeholder="https://api.openai.com/v1">
+        </label>
+
+        <label class="settings-field">
+          <span>模型名称</span>
+          <input id="settingsModel" placeholder="gpt-4o-mini">
+        </label>
+
+        <label class="settings-check">
+          <input id="settingsStrictSchema" type="checkbox">
+          <span>使用严格 JSON Schema 输出</span>
+        </label>
+
+        <div class="settings-actions">
+          <button class="message-action" id="saveSettingsBtn" type="button">保存</button>
+          <button id="testSettingsBtn" type="button">测试连接</button>
+          <button id="deleteSettingsBtn" type="button">删除配置</button>
+        </div>
+
+        <p class="settings-status" id="settingsStatusText">未检测</p>
+      </section>
+
+      <section class="history-panel" id="historyPanel" hidden>
+        <div class="settings-head">
+          <div>
+            <div class="settings-title">最近会话</div>
+            <div class="settings-subtitle">保存在浏览器本地</div>
+          </div>
+          <button class="ghost" id="closeHistoryBtn" type="button">关闭</button>
+        </div>
+        <div class="case-list" id="historyList"></div>
+      </section>
+
       <section class="conversation" id="messages" aria-live="polite"></section>
 
-      <footer class="composer-wrap">
+      <footer class="composer-wrap" id="composerWrap">
         <div class="composer">
           <textarea id="chatInput" rows="3" placeholder="请输入需求文案。例如：手机号+密码登录，连续输错 5 次后锁定账号，请设计测试用例。"></textarea>
           <div class="composer-bar">
@@ -35,6 +93,6 @@
     </main>
 
     <script src="prompts.js?v=0.3.2"></script>
-    <script src="sidepanel.js?v=0.3.2"></script>
+    <script src="sidepanel.js?v=0.5.1"></script>
   </body>
 </html>

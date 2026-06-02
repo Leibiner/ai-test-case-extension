@@ -28,6 +28,11 @@ powershell -ExecutionPolicy Bypass -File .\start-chrome-dev.ps1
 
 启动脚本会优先使用 Chrome for Testing，因为新版普通 Chrome 可能会忽略 `--load-extension` 命令行参数。如果没有安装 Chrome for Testing，脚本会回退到普通 Chrome，并打开 `chrome://extensions` 供手动加载。
 
+## 验收与示例
+
+- 手动验收步骤见 `docs/验收清单.md`。
+- 可复用的样例需求和期望输出形态见 `docs/示例需求与输出.md`。
+
 ## 数据与 Key 处理
 
 - API Key 保存在 `chrome.storage.local`。
@@ -43,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\start-chrome-dev.ps1
   -> 侧边栏调用用户配置的 /chat/completions 接口
   -> 模型返回回复和可选测试用例
   -> 侧边栏渲染聊天回复和测试用例表格
-  -> 用户导出 CSV / JSON / Markdown
+  -> 用户导出 XMind Markdown
 ```
 
 ## 当前能力
@@ -54,8 +59,8 @@ powershell -ExecutionPolicy Bypass -File .\start-chrome-dev.ps1
 - 需求不清晰时先追问。
 - 信息足够时生成结构化测试用例。
 - 系统提示词独立维护在 `prompts.js`。
-- 支持导出 CSV、JSON、Markdown。
-- 最近生成会话保存在插件本地存储。
+- 支持导出 XMind Markdown。
+- 最近会话保存在插件本地存储，包含追问会话和已生成用例的会话。
 
 ## 当前暂不包含
 

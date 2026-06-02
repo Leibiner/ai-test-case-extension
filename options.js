@@ -8,6 +8,7 @@ const els = {
   strictSchema: document.querySelector("#strictSchema"),
   saveBtn: document.querySelector("#saveBtn"),
   testBtn: document.querySelector("#testBtn"),
+  backBtn: document.querySelector("#backBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   statusText: document.querySelector("#statusText")
 };
@@ -105,7 +106,39 @@ async function testConnection() {
   }
 }
 
+async function backToSidePanel() {
+  const sidePanelUrl = extensionApi?.runtime?.getURL ? extensionApi.runtime.getURL("sidepanel.html") : "sidepanel.html";
+
+  const windowId = await getCurrentWindowId();
+  if (extensionApi?.sidePanel?.open && Number.isInteger(windowId)) {
+    try {
+      await extensionApi.sidePanel.open({ windowId });
+      setStatus("已打开侧边栏");
+      window.close();
+      return;
+    } catch (error) {
+      setStatus(`侧边栏打开失败，已切换到插件页面：${error.message}`);
+    }
+  }
+
+  window.location.href = sidePanelUrl;
+}
+
+async function getCurrentWindowId() {
+  if (!extensionApi?.windows?.getCurrent) return null;
+  return await new Promise((resolve) => {
+    extensionApi.windows.getCurrent((currentWindow) => {
+      if (extensionApi.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(currentWindow?.id ?? null);
+    });
+  });
+}
+
 els.saveBtn.addEventListener("click", save);
 els.clearBtn.addEventListener("click", clearKey);
 els.testBtn.addEventListener("click", testConnection);
+els.backBtn.addEventListener("click", backToSidePanel);
 loadSettings();
