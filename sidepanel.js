@@ -13,6 +13,8 @@ const state = {
   sessionId: crypto.randomUUID(),
   messages: [],
   cases: [],
+  caseReview: null,
+  caseResultId: "",
   lastRequirement: "",
   settings: { ...defaults },
   isSending: false
@@ -161,9 +163,16 @@ async function saveSettingsFromPanel() {
 }
 
 async function deleteSettingsConfig() {
-  if (!confirm("确定删除当前模型配置吗？")) return;
+  if (els.deleteSettingsBtn.dataset.confirm !== "true") {
+    els.deleteSettingsBtn.dataset.confirm = "true";
+    els.deleteSettingsBtn.textContent = "再次点击确认删除";
+    setSettingsStatus("删除后无法恢复当前 API 配置，请再次点击确认");
+    return;
+  }
   await removeStored(SETTINGS_KEY);
   state.settings = { ...defaults };
+  delete els.deleteSettingsBtn.dataset.confirm;
+  els.deleteSettingsBtn.textContent = "删除配置";
   populateSettingsForm();
   setStatus("模型未配置");
   setSettingsStatus("已删除模型配置");
@@ -208,12 +217,16 @@ function toggleKeyVisibility() {
 async function sendChat(contentOverride = "", visibleContentOverride = "") {
   if (state.isSending) return;
 
-  const content = (contentOverride || els.chatInput.value).trim();
+  const hasTextOverride = typeof contentOverride === "string" && contentOverride.trim();
+  const content = (hasTextOverride ? contentOverride : els.chatInput.value).trim();
   if (!content) {
     setStatus("请输入需求");
     return;
   }
-  const visibleContent = (visibleContentOverride || content).trim();
+  const visibleContent = (typeof visibleContentOverride === "string" && visibleContentOverride.trim()
+    ? visibleContentOverride
+    : content
+  ).trim();
 
   state.isSending = true;
   setLoading(true);
@@ -228,7 +241,8 @@ async function sendChat(contentOverride = "", visibleContentOverride = "") {
   }
 
   els.chatInput.value = "";
-  state.messages.push({ role: "user", content });
+  state.messages.push({ role: "user", content, displayContent: visibleContent });
+  if (!state.lastRequirement) state.lastRequirement = visibleContent;
   addPlainMessage("user", visibleContent);
   const loadingNode = addMessage("ai", "<p>正在分析需求...</p>", "pending");
 
@@ -241,15 +255,14 @@ async function sendChat(contentOverride = "", visibleContentOverride = "") {
 
     const clarifications = normalizeClarifications(result.clarifications);
     if (Array.isArray(result.cases) && result.cases.length) {
+      deactivateExistingCaseResults();
       state.cases = normalizeCases(result.cases);
-      state.lastRequirement = content;
-      const qualityIssues = inspectCaseQuality(state.cases);
+      state.caseReview = null;
+      state.caseResultId = crypto.randomUUID();
       addMessage("ai", `
         <p>${escapeHtml(assistantText)}</p>
         <p class="mode-note">来源：你本地配置的模型 ${escapeHtml(state.settings.model)}</p>
-        ${renderCaseTable(state.cases)}
-        ${renderQualityIssues(qualityIssues)}
-        ${renderExportActions()}
+        ${renderCaseResult()}
       `);
     } else {
       addMessage("ai", `
@@ -273,7 +286,7 @@ async function sendChat(contentOverride = "", visibleContentOverride = "") {
 async function callModel(settings, messages) {
   const modelMessages = [
     { role: "system", content: buildSystemPrompt() },
-    ...messages
+    ...messages.map((message) => ({ role: message.role, content: message.content }))
   ];
   const payload = buildChatPayload(settings, modelMessages, buildResponseFormat(settings.strictSchema), 0.2);
   const content = await requestChatCompletion(settings, payload);
@@ -334,7 +347,7 @@ async function repairModelJson(settings, messages, rawText, originalError) {
         "你是 JSON 格式修复器。",
         "把用户提供的模型回复改写成合法 JSON。",
         "只返回 JSON，不要返回 Markdown，不要使用代码块。",
-        "JSON 结构必须是：{\"message\":\"中文回复\",\"clarifications\":[{\"question\":\"...\",\"options\":[\"...\"]}],\"cases\":[{\"id\":\"TC-001\",\"title\":\"...\",\"priority\":\"P0/P1/P2/P3\",\"type\":\"...\",\"precondition\":\"...\",\"steps\":\"...\",\"expected\":\"...\"}]}。",
+        "JSON 结构必须是：{\"message\":\"中文回复\",\"clarifications\":[{\"question\":\"...\",\"options\":[\"...\"]}],\"cases\":[{\"id\":\"TC-001\",\"requirementPoint\":\"...\",\"title\":\"...\",\"priority\":\"P0/P1/P2/P3\",\"type\":\"...\",\"testMethod\":\"...\",\"precondition\":\"...\",\"steps\":\"...\",\"expected\":\"...\",\"risk\":\"...\",\"source\":\"原始需求/用户补充/测试设计推导\"}]}。",
         "如果原始回复是在追问需求，返回 cases 为空数组。"
       ].join("\n")
     },
@@ -431,12 +444,16 @@ function buildResponseFormat(strictSchema) {
               required: ["id", "title", "priority", "type", "precondition", "steps", "expected"],
               properties: {
                 id: { type: "string" },
+                requirementPoint: { type: "string" },
                 title: { type: "string" },
                 priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] },
                 type: { type: "string" },
+                testMethod: { type: "string" },
                 precondition: { type: "string" },
                 steps: { type: "string" },
-                expected: { type: "string" }
+                expected: { type: "string" },
+                risk: { type: "string" },
+                source: { type: "string" }
               }
             }
           }
@@ -572,14 +589,26 @@ function setLoading(isLoading) {
 
 function normalizeCases(cases) {
   return cases.map((item, index) => ({
-    id: item.id || `TC-${String(index + 1).padStart(3, "0")}`,
-    title: item.title || "未命名测试用例",
-    priority: item.priority || "P1",
-    type: item.type || "功能测试",
-    precondition: item.precondition || "",
-    steps: Array.isArray(item.steps) ? item.steps.join("; ") : (item.steps || ""),
-    expected: item.expected || ""
+    id: normalizeCaseText(item.id) || `TC-${String(index + 1).padStart(3, "0")}`,
+    requirementPoint: normalizeCaseText(item.requirementPoint),
+    title: normalizeCaseText(item.title) || "未命名测试用例",
+    priority: normalizeCaseText(item.priority) || "P1",
+    type: normalizeCaseText(item.type) || "功能测试",
+    testMethod: normalizeCaseText(item.testMethod),
+    precondition: normalizeCaseText(item.precondition),
+    steps: Array.isArray(item.steps) ? item.steps.map(normalizeCaseText).filter(Boolean).join("; ") : normalizeCaseText(item.steps),
+    expected: normalizeCaseText(item.expected),
+    risk: normalizeCaseText(item.risk),
+    source: normalizeCaseText(item.source),
+    reviewStatus: ["accepted", "needs-work"].includes(item.reviewStatus) ? item.reviewStatus : "pending",
+    feedbackType: normalizeCaseText(item.feedbackType),
+    userFeedback: normalizeCaseText(item.userFeedback)
   }));
+}
+
+function normalizeCaseText(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
 }
 
 function normalizeClarifications(clarifications) {
@@ -630,41 +659,259 @@ function renderClarifications(clarifications) {
 }
 
 function renderCaseTable(cases) {
-  const rows = cases.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.id)}</td>
-      <td>${escapeHtml(item.title)}</td>
-      <td>${escapeHtml(item.priority)}</td>
-      <td>${escapeHtml(item.type)}</td>
-      <td>${escapeHtml(item.precondition)}</td>
-      <td>${escapeHtml(item.steps)}</td>
-      <td>${escapeHtml(item.expected)}</td>
-    </tr>
-  `).join("");
+  if (!cases.length) return `<p class="empty-note">当前没有可评审的测试用例。</p>`;
+  const items = cases.map((item, index) => {
+    const status = caseStatusMeta(item.reviewStatus);
+    return `
+      <details class="case-item" data-case-index="${index}" ${index === 0 ? "open" : ""}>
+        <summary>
+          <span class="priority-tag" data-priority="${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span>
+          <span class="case-summary-title"><strong>${escapeHtml(item.id)}</strong> ${escapeHtml(item.title)}</span>
+          <span class="case-status" data-status="${escapeHtml(item.reviewStatus)}">${status.label}</span>
+        </summary>
+        <div class="case-body">
+          <dl class="case-fields">
+            ${renderCaseField("需求点", item.requirementPoint, "trace")}
+            ${renderCaseField("依据", item.source, "trace")}
+            ${renderCaseField("风险", item.risk)}
+            ${renderCaseField("测试方法", item.testMethod)}
+            ${renderCaseField("类型", item.type)}
+            ${renderCaseField("前置条件", item.precondition)}
+            ${renderCaseField("测试步骤", item.steps)}
+            ${renderCaseField("预期结果", item.expected)}
+          </dl>
+          ${item.userFeedback ? `<div class="case-feedback"><strong>评审意见${item.feedbackType ? ` · ${escapeHtml(item.feedbackType)}` : ""}</strong>${escapeHtml(item.userFeedback)}</div>` : ""}
+          <div class="case-actions">
+            <button data-action="accept-case" data-index="${index}" type="button">${item.reviewStatus === "accepted" ? "取消采纳" : "采纳"}</button>
+            <button data-action="edit-case" data-index="${index}" type="button">编辑</button>
+            <button data-action="flag-case" data-index="${index}" type="button">标记问题</button>
+            <button class="danger-action" data-action="delete-case" data-index="${index}" type="button">删除</button>
+          </div>
+        </div>
+      </details>
+    `;
+  }).join("");
   return `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>编号</th>
-            <th>标题</th>
-            <th>优先级</th>
-            <th>类型</th>
-            <th>前置条件</th>
-            <th>测试步骤</th>
-            <th>预期结果</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+    <div class="case-review-list">${items}</div>
+  `;
+}
+
+function renderCaseField(label, value, extraClass = "") {
+  const content = String(value || "").trim() || "未提供";
+  return `<div class="case-field ${extraClass}"><dt>${label}</dt><dd>${escapeHtml(content)}</dd></div>`;
+}
+
+function caseStatusMeta(status) {
+  const statuses = {
+    accepted: { label: "已采纳" },
+    "needs-work": { label: "待修改" },
+    pending: { label: "待评审" }
+  };
+  return statuses[status] || statuses.pending;
+}
+
+function renderCaseResult() {
+  const acceptedCount = state.cases.filter((item) => item.reviewStatus === "accepted").length;
+  const needsWorkCount = state.cases.filter((item) => item.reviewStatus === "needs-work").length;
+  const acceptanceRate = state.cases.length ? Math.round((acceptedCount / state.cases.length) * 100) : 0;
+  const qualityIssues = inspectCaseQuality(state.cases);
+  return `
+    <div class="case-result" data-result-id="${escapeHtml(state.caseResultId)}">
+      <div class="review-summary" aria-label="评审进度">
+        <span>共 ${state.cases.length} 条</span>
+        <span>已采纳 ${acceptedCount}</span>
+        <span>待修改 ${needsWorkCount}</span>
+        <span>采纳率 ${acceptanceRate}%</span>
+      </div>
+      ${renderCaseTable(state.cases)}
+      ${renderQualityIssues(qualityIssues)}
+      ${renderAiReview(state.caseReview)}
+      ${renderExportActions()}
     </div>
   `;
 }
 
+function deactivateExistingCaseResults() {
+  els.messages.querySelectorAll(".case-result").forEach((result) => {
+    result.classList.add("stale");
+    result.querySelectorAll("button").forEach((button) => {
+      button.disabled = true;
+    });
+  });
+}
+
+function refreshCaseResult() {
+  const result = [...els.messages.querySelectorAll(".case-result")]
+    .find((node) => node.dataset.resultId === state.caseResultId);
+  if (result) result.outerHTML = renderCaseResult();
+}
+
+function renderAiReview(review) {
+  if (!review) {
+    return `<div class="ai-review-note">AI 复审尚未运行。建议在人工采纳前检查需求覆盖、重复和不可执行项。</div>`;
+  }
+  if (review.error) {
+    return `<div class="ai-review-note error"><strong>AI 复审失败</strong><p>${escapeHtml(review.error)}</p></div>`;
+  }
+  const findings = review.findings.map((item) => `
+    <li data-severity="${escapeHtml(item.severity)}">
+      <strong>${escapeHtml(reviewSeverityLabel(item.severity))}${item.caseIds.length ? ` · ${escapeHtml(item.caseIds.join("、"))}` : ""}</strong>
+      <span>${escapeHtml(item.problem)}</span>
+      ${item.suggestion ? `<small>建议：${escapeHtml(item.suggestion)}</small>` : ""}
+    </li>
+  `).join("");
+  const missingCoverage = review.missingCoverage.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  return `
+    <div class="ai-review-note completed">
+      <div class="ai-review-head">
+        <strong>独立 AI 复审</strong>
+        <span class="review-score">${review.score} 分</span>
+      </div>
+      <p>${escapeHtml(review.summary)}</p>
+      ${findings ? `<div class="review-section"><b>审查发现</b><ul class="review-findings">${findings}</ul></div>` : ""}
+      ${missingCoverage ? `<div class="review-section"><b>待补覆盖</b><ul>${missingCoverage}</ul></div>` : ""}
+      ${!findings && !missingCoverage ? `<p class="review-pass">未发现需要阻断采纳的问题。</p>` : ""}
+    </div>
+  `;
+}
+
+function reviewSeverityLabel(severity) {
+  return { high: "高风险", medium: "中风险", low: "低风险" }[severity] || "提示";
+}
+
+async function runCaseReview(button) {
+  if (state.isSending || !state.cases.length) return;
+  state.isSending = true;
+  setLoading(true);
+  if (button) {
+    button.disabled = true;
+    button.textContent = "复审中...";
+  }
+  setStatus("AI 复审中", "llm");
+  try {
+    state.settings = { ...defaults, ...(await getStored(SETTINGS_KEY, defaults)) };
+    state.caseReview = await requestCaseReview(state.settings);
+    await saveHistory();
+    setStatus("复审完成", "llm");
+  } catch (error) {
+    state.caseReview = { error: error.message || "未知错误" };
+    setStatus("复审失败");
+  } finally {
+    refreshCaseResult();
+    setLoading(false);
+    state.isSending = false;
+  }
+}
+
+async function requestCaseReview(settings) {
+  if (!settings.apiKey) throw new Error("请先配置模型服务。");
+  const requirementContext = state.messages
+    .filter((message) => message.role === "user")
+    .map((message, index) => `${index + 1}. ${message.displayContent || message.content}`)
+    .join("\n");
+  const reviewMessages = [
+    {
+      role: "system",
+      content: [
+        "你是独立于用例生成者的资深测试评审员。",
+        "只依据用户原始需求、用户已确认补充和待审用例进行审查，不能补造业务规则。",
+        "重点审查：需求点追溯是否真实、用例是否与规则矛盾、步骤能否执行、预期能否判定、边界和状态是否遗漏、是否重复、优先级是否合理。",
+        "测试设计推导可以作为补充覆盖，但必须标明来源；缺少业务事实时应提出澄清缺口，不能把猜测当成缺失用例。",
+        "score 为 0-100 的整数。findings 只写有证据的问题；caseIds 可为空数组。missingCoverage 只列需求明确支持但尚未覆盖的测试点。",
+        "只返回 JSON，不要输出 Markdown。"
+      ].join("\n")
+    },
+    {
+      role: "user",
+      content: [
+        "需求与用户确认记录：",
+        requirementContext || state.lastRequirement || "未记录",
+        "",
+        "待审测试用例：",
+        JSON.stringify(state.cases.map(stripCaseFeedback), null, 2)
+      ].join("\n")
+    }
+  ];
+  const responseFormat = buildCaseReviewResponseFormat(settings.strictSchema);
+  let content;
+  try {
+    content = await requestChatCompletion(settings, buildChatPayload(settings, reviewMessages, responseFormat, 0.1));
+  } catch (error) {
+    if (!isResponseFormatUnsupported(error)) throw error;
+    content = await requestChatCompletion(settings, buildChatPayload(settings, reviewMessages, { type: "json_object" }, 0.1));
+  }
+  try {
+    return normalizeCaseReview(parseModelJson(content));
+  } catch {
+    throw new Error("模型复审结果不是有效 JSON，请重试或更换支持结构化输出的模型。");
+  }
+}
+
+function stripCaseFeedback(item) {
+  const { reviewStatus, feedbackType, userFeedback, ...testCase } = item;
+  return testCase;
+}
+
+function buildCaseReviewResponseFormat(strictSchema) {
+  if (!strictSchema) return { type: "json_object" };
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "test_case_review_response",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["score", "summary", "findings", "missingCoverage"],
+        properties: {
+          score: { type: "integer", minimum: 0, maximum: 100 },
+          summary: { type: "string" },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["severity", "caseIds", "problem", "suggestion"],
+              properties: {
+                severity: { type: "string", enum: ["high", "medium", "low"] },
+                caseIds: { type: "array", items: { type: "string" } },
+                problem: { type: "string" },
+                suggestion: { type: "string" }
+              }
+            }
+          },
+          missingCoverage: { type: "array", items: { type: "string" } }
+        }
+      }
+    }
+  };
+}
+
+function normalizeCaseReview(review) {
+  const score = Math.max(0, Math.min(100, Math.round(Number(review.score) || 0)));
+  const findings = Array.isArray(review.findings) ? review.findings.map((item) => ({
+    severity: ["high", "medium", "low"].includes(item.severity) ? item.severity : "low",
+    caseIds: Array.isArray(item.caseIds) ? item.caseIds.map(String).slice(0, 8) : [],
+    problem: String(item.problem || "").trim(),
+    suggestion: String(item.suggestion || "").trim()
+  })).filter((item) => item.problem).slice(0, 12) : [];
+  return {
+    score,
+    summary: String(review.summary || "复审完成。").trim(),
+    findings,
+    missingCoverage: Array.isArray(review.missingCoverage)
+      ? review.missingCoverage.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 12)
+      : []
+  };
+}
+
 function renderExportActions() {
+  const acceptedCount = state.cases.filter((item) => item.reviewStatus === "accepted").length;
   return `
     <div class="message-tools">
-      <button class="message-action" data-action="export-xmind-md" type="button">XMind Markdown</button>
+      <button class="message-action" data-action="review-cases" type="button" ${state.cases.length ? "" : "disabled"}>AI 复审</button>
+      <button data-action="export-xmind-md" type="button" ${state.cases.length ? "" : "disabled"}>导出全部</button>
+      <button data-action="export-accepted-xmind-md" type="button" ${acceptedCount ? "" : "disabled"}>导出已采纳 (${acceptedCount})</button>
     </div>
   `;
 }
@@ -676,7 +923,7 @@ function inspectCaseQuality(cases) {
 
   cases.forEach((item, index) => {
     const label = item.id || `第 ${index + 1} 条`;
-    ["title", "priority", "type", "precondition", "steps", "expected"].forEach((field) => {
+    ["requirementPoint", "title", "priority", "type", "testMethod", "precondition", "steps", "expected", "risk", "source"].forEach((field) => {
       if (!String(item[field] || "").trim()) {
         issues.push(`${label} 缺少 ${caseFieldLabel(field)}。`);
       }
@@ -696,6 +943,12 @@ function inspectCaseQuality(cases) {
     if (vaguePatterns.some((pattern) => pattern.test(item.expected))) {
       issues.push(`${label} 的预期结果偏模糊，建议写明页面反馈、状态或数据变化。`);
     }
+    if (item.risk.trim().length < 6) {
+      issues.push(`${label} 的风险描述过于笼统，建议写明失败影响。`);
+    }
+    if (!/(原始需求|用户补充|测试设计推导)/.test(item.source)) {
+      issues.push(`${label} 的依据无法追溯到需求、用户补充或测试设计推导。`);
+    }
   });
 
   titles.forEach((count, title) => {
@@ -704,16 +957,29 @@ function inspectCaseQuality(cases) {
     }
   });
 
-  return issues.slice(0, 8);
+  const caseBodies = new Map();
+  cases.forEach((item) => {
+    const signature = normalizeCaseSignature(`${item.steps} ${item.expected}`);
+    if (signature.length > 12) caseBodies.set(signature, [...(caseBodies.get(signature) || []), item.id]);
+  });
+  caseBodies.forEach((ids) => {
+    if (ids.length > 1) issues.push(`${ids.join("、")} 的步骤和预期高度重复。`);
+  });
+
+  return issues.slice(0, 12);
+}
+
+function normalizeCaseSignature(value) {
+  return String(value || "").replace(/[\s，。；、,.!?！？:：\-]/g, "").toLowerCase();
 }
 
 function renderQualityIssues(issues) {
   if (!issues.length) {
-    return `<div class="quality-note ok">本地质量检查：未发现明显字段缺失、重复标题或模糊预期。</div>`;
+    return `<div class="quality-note ok">本地结构审查：追溯字段完整，未发现明显重复、过短步骤或模糊预期。</div>`;
   }
   return `
     <div class="quality-note warn">
-      <strong>本地质量检查</strong>
+      <strong>本地结构审查 · ${issues.length} 项</strong>
       <ul>${issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>
     </div>
   `;
@@ -722,11 +988,15 @@ function renderQualityIssues(issues) {
 function caseFieldLabel(field) {
   const labels = {
     title: "标题",
+    requirementPoint: "需求点",
     priority: "优先级",
     type: "类型",
+    testMethod: "测试方法",
     precondition: "前置条件",
     steps: "测试步骤",
-    expected: "预期结果"
+    expected: "预期结果",
+    risk: "风险",
+    source: "依据"
   };
   return labels[field] || field;
 }
@@ -758,25 +1028,29 @@ function exportMarkdown() {
   downloadFile("test-cases.md", lines.join("\n"), "text/markdown;charset=utf-8");
 }
 
-function exportXmindMarkdown() {
+function exportXmindMarkdown(cases = state.cases, filename = "test-cases-xmind.md") {
   const title = state.lastRequirement || firstUserMessage() || "测试用例";
   const lines = [
     `# ${markdownInline(title)}`,
     ""
   ];
-  const groups = groupCasesByType(state.cases);
+  const groups = groupCasesByType(cases);
   groups.forEach(([type, cases]) => {
     lines.push(`## ${markdownInline(type || "未分类")}`);
     cases.forEach((item) => {
       lines.push(`### ${markdownInline(`${item.id} ${item.title}`)}`);
+      if (item.requirementPoint) lines.push(`- 需求点：${markdownInline(item.requirementPoint)}`);
+      if (item.source) lines.push(`- 依据：${markdownInline(item.source)}`);
       lines.push(`- 优先级：${markdownInline(item.priority)}`);
+      if (item.testMethod) lines.push(`- 测试方法：${markdownInline(item.testMethod)}`);
+      if (item.risk) lines.push(`- 风险：${markdownInline(item.risk)}`);
       if (item.precondition) lines.push(`- 前置条件：${markdownInline(item.precondition)}`);
       lines.push(`- 测试步骤：${markdownInline(item.steps)}`);
       lines.push(`- 预期结果：${markdownInline(item.expected)}`);
     });
     lines.push("");
   });
-  downloadFile("test-cases-xmind.md", lines.join("\n"), "text/markdown;charset=utf-8");
+  downloadFile(filename, lines.join("\n"), "text/markdown;charset=utf-8");
 }
 
 function groupCasesByType(cases) {
@@ -796,7 +1070,8 @@ function downloadFile(filename, content, type) {
   link.href = url;
   link.download = filename;
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function saveHistory() {
@@ -804,6 +1079,7 @@ async function saveHistory() {
     sessionId: state.sessionId,
     messages: state.messages,
     cases: state.cases,
+    caseReview: state.caseReview,
     lastRequirement: state.lastRequirement,
     createdAt: new Date().toISOString()
   };
@@ -843,12 +1119,17 @@ async function reuseHistory(index) {
   if (!item) return;
   state.sessionId = item.sessionId || crypto.randomUUID();
   state.messages = item.messages || [];
-  state.cases = item.cases || [];
+  state.cases = normalizeCases(item.cases || []);
+  state.caseReview = item.caseReview || null;
+  state.caseResultId = crypto.randomUUID();
   state.lastRequirement = item.lastRequirement || firstUserMessage();
   els.messages.innerHTML = "";
-  state.messages.forEach((message) => addPlainMessage(message.role === "assistant" ? "ai" : "user", message.content));
+  state.messages.forEach((message) => addPlainMessage(
+    message.role === "assistant" ? "ai" : "user",
+    message.displayContent || message.content
+  ));
   if (state.cases.length) {
-    addMessage("ai", `<p>该会话最近生成的测试用例：</p>${renderCaseTable(state.cases)}${renderExportActions()}`);
+    addMessage("ai", `<p>该会话最近生成的测试用例：</p>${renderCaseResult()}`);
   }
   showView("chat");
   setStatus("已打开历史", state.settings.apiKey ? "llm" : "");
@@ -858,13 +1139,17 @@ function startNewSession() {
   state.sessionId = crypto.randomUUID();
   state.messages = [];
   state.cases = [];
+  state.caseReview = null;
+  state.caseResultId = "";
   state.lastRequirement = "";
   els.messages.innerHTML = "";
   els.chatInput.value = "";
   closeActionMenu();
   showView("chat");
   setStatus(state.settings.apiKey ? "模型已连接" : "模型未配置", state.settings.apiKey ? "llm" : "");
-  addPlainMessage("ai", "请发送需求文案。我会在信息不足时先追问，信息足够时生成结构化测试用例。");
+  if (state.settings.apiKey) {
+    addPlainMessage("ai", "请发送需求文案。我会在信息不足时先追问，信息足够时生成结构化测试用例。");
+  }
 }
 
 function csvCell(value) {
@@ -901,7 +1186,7 @@ function handleChatInputKeydown(event) {
   sendChat();
 }
 
-els.sendBtn.addEventListener("click", sendChat);
+els.sendBtn.addEventListener("click", () => sendChat());
 els.menuBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   toggleActionMenu();
@@ -922,8 +1207,168 @@ function handleActionClick(event) {
   if (!button) return;
   if (button.dataset.action === "open-options") openSettingsPanel();
   if (button.dataset.action === "export-xmind-md") exportXmindMarkdown();
+  if (button.dataset.action === "export-accepted-xmind-md") {
+    exportXmindMarkdown(state.cases.filter((item) => item.reviewStatus === "accepted"), "test-cases-accepted-xmind.md");
+  }
+  if (button.dataset.action === "review-cases") runCaseReview(button);
+  if (button.dataset.action === "accept-case") toggleCaseAccepted(Number(button.dataset.index));
+  if (button.dataset.action === "edit-case") openCaseEditor(Number(button.dataset.index));
+  if (button.dataset.action === "save-case") saveCaseEditor(button);
+  if (button.dataset.action === "cancel-case-edit") refreshCaseResult();
+  if (button.dataset.action === "flag-case") openCaseFeedback(Number(button.dataset.index));
+  if (button.dataset.action === "save-case-feedback") saveCaseFeedback(button);
+  if (button.dataset.action === "cancel-case-feedback") refreshCaseResult();
+  if (button.dataset.action === "delete-case") requestDeleteCase(Number(button.dataset.index));
+  if (button.dataset.action === "confirm-delete-case") confirmDeleteCase(Number(button.dataset.index));
+  if (button.dataset.action === "cancel-delete-case") refreshCaseResult();
   if (button.dataset.action === "submit-clarifications") submitClarifications(button);
   if (button.dataset.action === "reuse-history") reuseHistory(Number(button.dataset.index));
+}
+
+async function toggleCaseAccepted(index) {
+  const item = state.cases[index];
+  if (!item) return;
+  item.reviewStatus = item.reviewStatus === "accepted" ? "pending" : "accepted";
+  if (item.reviewStatus === "accepted") item.userFeedback = "";
+  if (item.reviewStatus === "accepted") item.feedbackType = "";
+  refreshCaseResult();
+  await saveHistory();
+  setStatus(item.reviewStatus === "accepted" ? "已采纳用例" : "已取消采纳", "llm");
+}
+
+function openCaseEditor(index) {
+  const item = state.cases[index];
+  const container = findCaseItem(index);
+  if (!item || !container) return;
+  container.open = true;
+  container.querySelector(".case-body").innerHTML = renderCaseEditor(item, index);
+  container.querySelector("input, textarea")?.focus();
+}
+
+function renderCaseEditor(item, index) {
+  const fields = [
+    ["title", "标题", "input"],
+    ["requirementPoint", "需求点", "textarea"],
+    ["source", "依据", "input"],
+    ["risk", "风险", "textarea"],
+    ["testMethod", "测试方法", "input"],
+    ["type", "类型", "input"],
+    ["priority", "优先级", "input"],
+    ["precondition", "前置条件", "textarea"],
+    ["steps", "测试步骤", "textarea"],
+    ["expected", "预期结果", "textarea"]
+  ];
+  const controls = fields.map(([field, label, kind]) => {
+    const value = escapeHtml(item[field] || "");
+    const control = kind === "textarea"
+      ? `<textarea data-field="${field}" rows="3">${value}</textarea>`
+      : `<input data-field="${field}" value="${value}">`;
+    return `<label class="case-edit-field"><span>${label}</span>${control}</label>`;
+  }).join("");
+  return `
+    <div class="case-editor">${controls}</div>
+    <div class="case-actions">
+      <button class="message-action" data-action="save-case" data-index="${index}" type="button">保存修改</button>
+      <button data-action="cancel-case-edit" type="button">取消</button>
+    </div>
+  `;
+}
+
+async function saveCaseEditor(button) {
+  const index = Number(button.dataset.index);
+  const item = state.cases[index];
+  const container = button.closest(".case-item");
+  if (!item || !container) return;
+  container.querySelectorAll("[data-field]").forEach((control) => {
+    item[control.dataset.field] = control.value.trim();
+  });
+  item.reviewStatus = "pending";
+  item.feedbackType = "";
+  item.userFeedback = "";
+  state.caseReview = null;
+  refreshCaseResult();
+  await saveHistory();
+  setStatus("用例已更新", "llm");
+}
+
+function openCaseFeedback(index) {
+  const item = state.cases[index];
+  const container = findCaseItem(index);
+  if (!item || !container) return;
+  container.open = true;
+  container.querySelector(".case-inline-panel")?.remove();
+  container.querySelector(".case-body").insertAdjacentHTML("beforeend", `
+    <div class="case-inline-panel">
+      <label class="case-edit-field">
+        <span>问题类型</span>
+        <select data-feedback-type>
+          ${["不准确", "重复", "不可执行", "需求外扩", "其它"].map((type) => `<option${item.feedbackType === type ? " selected" : ""}>${type}</option>`).join("")}
+        </select>
+      </label>
+      <label class="case-edit-field">
+        <span>评审意见</span>
+        <textarea data-feedback rows="3" placeholder="说明不准确、重复或不可执行的原因。">${escapeHtml(item.userFeedback)}</textarea>
+      </label>
+      <div class="case-actions">
+        <button class="message-action" data-action="save-case-feedback" data-index="${index}" type="button">保存意见</button>
+        <button data-action="cancel-case-feedback" type="button">取消</button>
+      </div>
+    </div>
+  `);
+  container.querySelector("[data-feedback]")?.focus();
+}
+
+async function saveCaseFeedback(button) {
+  const index = Number(button.dataset.index);
+  const item = state.cases[index];
+  const panel = button.closest(".case-inline-panel");
+  const feedback = panel?.querySelector("[data-feedback]")?.value.trim() || "";
+  const feedbackType = panel?.querySelector("[data-feedback-type]")?.value || "其它";
+  if (!item) return;
+  if (!feedback) {
+    setStatus("请填写评审意见");
+    return;
+  }
+  item.reviewStatus = "needs-work";
+  item.feedbackType = feedbackType;
+  item.userFeedback = feedback;
+  refreshCaseResult();
+  await saveHistory();
+  setStatus("已记录评审问题", "llm");
+}
+
+function requestDeleteCase(index) {
+  const item = state.cases[index];
+  const container = findCaseItem(index);
+  if (!item || !container) return;
+  container.open = true;
+  container.querySelector(".case-inline-panel")?.remove();
+  container.querySelector(".case-body").insertAdjacentHTML("beforeend", `
+    <div class="case-inline-panel danger-panel">
+      <strong>确认删除 ${escapeHtml(item.id)}？</strong>
+      <span>删除后仅可通过重新生成恢复。</span>
+      <div class="case-actions">
+        <button class="danger-confirm" data-action="confirm-delete-case" data-index="${index}" type="button">确认删除</button>
+        <button data-action="cancel-delete-case" type="button">取消</button>
+      </div>
+    </div>
+  `);
+}
+
+async function confirmDeleteCase(index) {
+  const item = state.cases[index];
+  if (!item) return;
+  state.cases.splice(index, 1);
+  state.caseReview = null;
+  refreshCaseResult();
+  await saveHistory();
+  setStatus("用例已删除", "llm");
+}
+
+function findCaseItem(index) {
+  const result = [...els.messages.querySelectorAll(".case-result")]
+    .find((node) => node.dataset.resultId === state.caseResultId);
+  return result?.querySelector(`.case-item[data-case-index="${index}"]`) || null;
 }
 
 function submitClarifications(button) {
